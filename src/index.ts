@@ -8,3 +8,9 @@ export type {
   FillOptions,
   FillResult,
 } from './types.js';
+export {
+  VoiceFillError,
+  TranscriptionError,
+  ExtractionError,
+  AudioFormatError,
+} from './errors.js';

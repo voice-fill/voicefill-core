@@ -7,6 +7,7 @@ vi.mock('ai', () => ({
 
 import { generateObject } from 'ai';
 import { extract } from '../src/extract.js';
+import { ExtractionError } from '../src/errors.js';
 
 const ContactSchema = z.object({
   firstName: z.string(),
@@ -54,5 +55,15 @@ describe('extract', () => {
         system: 'Extract only name fields.',
       }),
     );
+  });
+
+  it('wraps generateObject errors in ExtractionError', async () => {
+    vi.mocked(generateObject).mockRejectedValue(new Error('model overloaded'));
+
+    const error = await extract({} as any, 'text', { schema: ContactSchema }).catch((e) => e);
+
+    expect(error).toBeInstanceOf(ExtractionError);
+    expect(error.message).toContain('model overloaded');
+    expect(error.cause).toBeInstanceOf(Error);
   });
 });

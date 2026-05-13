@@ -1,4 +1,5 @@
 import { describe, it, expect, vi } from 'vitest';
+import { AudioFormatError, TranscriptionError } from '../src/errors.js';
 
 vi.mock('node:fs', () => ({
   default: { createReadStream: vi.fn().mockReturnValue('fake-stream') },
@@ -68,11 +69,27 @@ describe('transcribe', () => {
     expect(mock.audio.transcriptions.create).toHaveBeenCalledOnce();
   });
 
-  it('throws on unsupported format in named buffer', async () => {
+  it('throws AudioFormatError on unsupported format in named buffer', async () => {
     const mock = createMockClient('');
 
     await expect(
       transcribe(mock, { buffer: Buffer.from('data'), name: 'file.txt' }, 'whisper-1'),
-    ).rejects.toThrow('Unsupported audio format');
+    ).rejects.toThrow(AudioFormatError);
+  });
+
+  it('wraps Whisper API errors in TranscriptionError', async () => {
+    const mock = {
+      audio: {
+        transcriptions: {
+          create: vi.fn().mockRejectedValue(new Error('API rate limit exceeded')),
+        },
+      },
+    } as any;
+
+    const error = await transcribe(mock, Buffer.from('audio'), 'whisper-1').catch((e) => e);
+
+    expect(error).toBeInstanceOf(TranscriptionError);
+    expect(error.message).toContain('API rate limit exceeded');
+    expect(error.cause).toBeInstanceOf(Error);
   });
 });

@@ -3,6 +3,7 @@ import path from 'node:path';
 import type OpenAI from 'openai';
 import { toFile } from 'openai/core/uploads';
 import type { AudioInput, TranscribeResult } from './types.js';
+import { AudioFormatError, TranscriptionError } from './errors.js';
 
 const SUPPORTED_FORMATS = new Set([
   'flac', 'm4a', 'mp3', 'mp4', 'mpeg', 'mpga', 'oga', 'ogg', 'wav', 'webm',
@@ -11,9 +12,7 @@ const SUPPORTED_FORMATS = new Set([
 function validateAudioFormat(fileName: string): void {
   const ext = path.extname(fileName).slice(1).toLowerCase();
   if (!SUPPORTED_FORMATS.has(ext)) {
-    throw new Error(
-      `Unsupported audio format: .${ext}. Supported: ${[...SUPPORTED_FORMATS].join(', ')}`,
-    );
+    throw new AudioFormatError(ext);
   }
 }
 
@@ -35,6 +34,13 @@ export async function transcribe(
   model: string,
 ): Promise<TranscribeResult> {
   const file = await normalizeAudioInput(input);
-  const response = await client.audio.transcriptions.create({ file, model });
-  return { text: response.text };
+  try {
+    const response = await client.audio.transcriptions.create({ file, model });
+    return { text: response.text };
+  } catch (error) {
+    throw new TranscriptionError(
+      `Transcription failed: ${error instanceof Error ? error.message : String(error)}`,
+      error instanceof Error ? error : undefined,
+    );
+  }
 }
