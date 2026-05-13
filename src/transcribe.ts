@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type OpenAI from 'openai';
 import { toFile } from 'openai/core/uploads';
-import type { AudioInput, TranscribeResult } from './types.js';
+import type { AudioInput, TranscribeOptions, TranscribeResult } from './types.js';
 import { AudioFormatError, TranscriptionError } from './errors.js';
 
 const SUPPORTED_FORMATS = new Set([
@@ -32,10 +32,16 @@ export async function transcribe(
   client: OpenAI,
   input: AudioInput,
   model: string,
+  options?: TranscribeOptions,
 ): Promise<TranscribeResult> {
   const file = await normalizeAudioInput(input);
   try {
-    const response = await client.audio.transcriptions.create({ file, model });
+    const response = await client.audio.transcriptions.create({
+      file,
+      model,
+      ...(options?.language && { language: options.language }),
+      ...(options?.prompt && { prompt: options.prompt }),
+    });
     return { text: response.text };
   } catch (error) {
     throw new TranscriptionError(

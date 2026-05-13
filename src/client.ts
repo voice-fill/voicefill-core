@@ -4,6 +4,7 @@ import type { z } from 'zod';
 import type {
   AudioInput,
   VoiceFillConfig,
+  TranscribeOptions,
   TranscribeResult,
   FillOptions,
   FillResult,
@@ -13,7 +14,7 @@ import { transcribe as transcribeAudio } from './transcribe.js';
 import { extract as extractData } from './extract.js';
 
 export interface VoiceFillClient {
-  transcribe(input: AudioInput): Promise<TranscribeResult>;
+  transcribe(input: AudioInput, options?: TranscribeOptions): Promise<TranscribeResult>;
   extract<T extends z.ZodType>(
     text: string,
     options: ExtractOptions<T>,
@@ -31,8 +32,8 @@ export function createVoiceFill(config: VoiceFillConfig): VoiceFillClient {
   const whisperModel = config.whisperModel ?? 'whisper-1';
 
   return {
-    async transcribe(input) {
-      return transcribeAudio(whisperClient, input, whisperModel);
+    async transcribe(input, options) {
+      return transcribeAudio(whisperClient, input, whisperModel, options);
     },
 
     async extract(text, options) {
@@ -40,7 +41,7 @@ export function createVoiceFill(config: VoiceFillConfig): VoiceFillClient {
     },
 
     async fill(input, options) {
-      const transcript = await transcribeAudio(whisperClient, input, whisperModel);
+      const transcript = await transcribeAudio(whisperClient, input, whisperModel, options.transcribe);
       const data = await extractData(model, transcript.text, options);
       return { data, transcript: transcript.text };
     },

@@ -8,6 +8,11 @@ export interface VoiceFillConfig {
 
 export type AudioInput = string | Buffer | { buffer: Buffer; name: string };
 
+export interface TranscribeOptions {
+  language?: string;
+  prompt?: string;
+}
+
 export interface TranscribeResult {
   text: string;
 }
@@ -26,7 +31,9 @@ export interface ExtractOptions<T extends z.ZodType> {
   maxSteps?: number;
 }
 
-export interface FillOptions<T extends z.ZodType> extends ExtractOptions<T> {}
+export interface FillOptions<T extends z.ZodType> extends ExtractOptions<T> {
+  transcribe?: TranscribeOptions;
+}
 
 export interface FillResult<T> {
   data: T;

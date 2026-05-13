@@ -77,6 +77,37 @@ describe('transcribe', () => {
     ).rejects.toThrow(AudioFormatError);
   });
 
+  it('passes language option to Whisper API', async () => {
+    const mock = createMockClient('Pozdravljen, sem Janez.');
+    const result = await transcribe(mock, Buffer.from('audio'), 'whisper-1', { language: 'sl' });
+
+    expect(result).toEqual({ text: 'Pozdravljen, sem Janez.' });
+    expect(mock.audio.transcriptions.create).toHaveBeenCalledWith(
+      expect.objectContaining({ language: 'sl' }),
+    );
+  });
+
+  it('passes prompt option to Whisper API', async () => {
+    const mock = createMockClient('VoiceFill is great.');
+    const result = await transcribe(mock, Buffer.from('audio'), 'whisper-1', {
+      prompt: 'The transcript contains product names like VoiceFill.',
+    });
+
+    expect(result).toEqual({ text: 'VoiceFill is great.' });
+    expect(mock.audio.transcriptions.create).toHaveBeenCalledWith(
+      expect.objectContaining({ prompt: 'The transcript contains product names like VoiceFill.' }),
+    );
+  });
+
+  it('omits language and prompt when not provided', async () => {
+    const mock = createMockClient('Hello.');
+    await transcribe(mock, Buffer.from('audio'), 'whisper-1');
+
+    const callArgs = mock.audio.transcriptions.create.mock.calls[0][0];
+    expect(callArgs).not.toHaveProperty('language');
+    expect(callArgs).not.toHaveProperty('prompt');
+  });
+
   it('wraps Whisper API errors in TranscriptionError', async () => {
     const mock = {
       audio: {

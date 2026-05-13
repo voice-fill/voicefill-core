@@ -3,6 +3,7 @@ export type { VoiceFillClient } from './client.js';
 export type {
   VoiceFillConfig,
   AudioInput,
+  TranscribeOptions,
   TranscribeResult,
   ExtractOptions,
   FillOptions,

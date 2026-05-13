@@ -60,6 +60,20 @@ describe('createVoiceFill', () => {
     expect(extractMod.extract).toHaveBeenCalledOnce();
   });
 
+  it('transcribe() forwards options to transcribe module', async () => {
+    vi.mocked(transcribeMod.transcribe).mockResolvedValue({ text: 'hej' });
+    const client = createVoiceFill({ apiKey: 'test-key' });
+
+    await client.transcribe(Buffer.from('audio'), { language: 'sl' });
+
+    expect(transcribeMod.transcribe).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      expect.anything(),
+      { language: 'sl' },
+    );
+  });
+
   it('fill() combines transcribe and extract, returns both', async () => {
     vi.mocked(transcribeMod.transcribe).mockResolvedValue({
       text: 'My name is John, email john@test.com',
@@ -76,5 +90,23 @@ describe('createVoiceFill', () => {
     expect(result.data).toEqual({ name: 'John', email: 'john@test.com' });
     expect(transcribeMod.transcribe).toHaveBeenCalledOnce();
     expect(extractMod.extract).toHaveBeenCalledOnce();
+  });
+
+  it('fill() passes transcribe options to transcribe module', async () => {
+    vi.mocked(transcribeMod.transcribe).mockResolvedValue({ text: 'hej' });
+    vi.mocked(extractMod.extract).mockResolvedValue({ name: '', email: '' });
+
+    const client = createVoiceFill({ apiKey: 'test-key' });
+    await client.fill(Buffer.from('audio'), {
+      schema: ContactSchema,
+      transcribe: { language: 'sl', prompt: 'Slovenian names' },
+    });
+
+    expect(transcribeMod.transcribe).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      expect.anything(),
+      { language: 'sl', prompt: 'Slovenian names' },
+    );
   });
 });
