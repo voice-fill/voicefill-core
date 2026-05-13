@@ -13,7 +13,9 @@
       "types": "./dist/index.d.ts"
     }
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsup",
     "test": "vitest run",
@@ -24,9 +26,12 @@
     "zod": "^3.23.0"
   },
   "dependencies": {
+    "@ai-sdk/openai": "^3.0.63",
+    "ai": "^6.0.180",
     "openai": "^6.1.0"
   },
   "devDependencies": {
+    "@types/node": "^25.7.0",
     "tsup": "^8.4.0",
     "typescript": "^5.7.0",
     "vitest": "^3.1.0",
