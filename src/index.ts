@@ -7,6 +7,7 @@ export type {
   ExtractOptions,
   FillOptions,
   FillResult,
+  VoiceFillTool,
 } from './types.js';
 export {
   VoiceFillError,
