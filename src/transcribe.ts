@@ -4,10 +4,12 @@ import type OpenAI from 'openai';
 import { toFile } from 'openai/core/uploads';
 import type { AudioInput, TranscribeResult } from './types.js';
 
-const SUPPORTED_FORMATS = new Set(['mp3', 'mp4', 'mpeg', 'mpga', 'm4a', 'wav', 'webm']);
+const SUPPORTED_FORMATS = new Set([
+  'flac', 'm4a', 'mp3', 'mp4', 'mpeg', 'mpga', 'oga', 'ogg', 'wav', 'webm',
+]);
 
-function validateAudioFormat(filePath: string): void {
-  const ext = path.extname(filePath).slice(1).toLowerCase();
+function validateAudioFormat(fileName: string): void {
+  const ext = path.extname(fileName).slice(1).toLowerCase();
   if (!SUPPORTED_FORMATS.has(ext)) {
     throw new Error(
       `Unsupported audio format: .${ext}. Supported: ${[...SUPPORTED_FORMATS].join(', ')}`,
@@ -20,7 +22,11 @@ async function normalizeAudioInput(input: AudioInput) {
     validateAudioFormat(input);
     return fs.createReadStream(input);
   }
-  return toFile(input, 'audio.webm');
+  if (Buffer.isBuffer(input)) {
+    return toFile(input, 'audio.webm');
+  }
+  validateAudioFormat(input.name);
+  return toFile(input.buffer, input.name);
 }
 
 export async function transcribe(

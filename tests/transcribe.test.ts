@@ -6,7 +6,7 @@ vi.mock('node:fs', () => ({
 
 import { transcribe } from '../src/transcribe.js';
 
-const SUPPORTED_FORMATS = ['mp3', 'mp4', 'mpeg', 'mpga', 'm4a', 'wav', 'webm'];
+const SUPPORTED_FORMATS = ['flac', 'm4a', 'mp3', 'mp4', 'mpeg', 'mpga', 'oga', 'ogg', 'wav', 'webm'];
 
 function createMockClient(transcriptText: string) {
   return {
@@ -54,5 +54,25 @@ describe('transcribe', () => {
         transcribe(mock, `/tmp/audio.${ext}`, 'whisper-1'),
       ).resolves.toEqual({ text: 'ok' });
     }
+  });
+
+  it('accepts named buffer with original filename', async () => {
+    const mock = createMockClient('Named buffer transcript.');
+    const result = await transcribe(
+      mock,
+      { buffer: Buffer.from('fake-audio'), name: 'recording.m4a' },
+      'whisper-1',
+    );
+
+    expect(result).toEqual({ text: 'Named buffer transcript.' });
+    expect(mock.audio.transcriptions.create).toHaveBeenCalledOnce();
+  });
+
+  it('throws on unsupported format in named buffer', async () => {
+    const mock = createMockClient('');
+
+    await expect(
+      transcribe(mock, { buffer: Buffer.from('data'), name: 'file.txt' }, 'whisper-1'),
+    ).rejects.toThrow('Unsupported audio format');
   });
 });

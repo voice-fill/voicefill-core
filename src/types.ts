@@ -6,7 +6,7 @@ export interface VoiceFillConfig {
   whisperModel?: string;
 }
 
-export type AudioInput = string | Buffer;
+export type AudioInput = string | Buffer | { buffer: Buffer; name: string };
 
 export interface TranscribeResult {
   text: string;
