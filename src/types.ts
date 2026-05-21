@@ -1,16 +1,19 @@
+import type { LanguageModel, TranscriptionModel } from 'ai';
 import type { z } from 'zod';
 
 export interface VoiceFillConfig {
-  apiKey: string;
-  model?: string;
-  whisperModel?: string;
+  model: LanguageModel;
+  transcriptionModel: TranscriptionModel;
 }
 
 export type AudioInput = string | Buffer | { buffer: Buffer; name: string };
 
+import type { JSONValue } from 'ai';
+
+export type ProviderOptions = Record<string, Record<string, JSONValue | undefined>>;
+
 export interface TranscribeOptions {
-  language?: string;
-  prompt?: string;
+  providerOptions?: ProviderOptions;
 }
 
 export interface TranscribeResult {

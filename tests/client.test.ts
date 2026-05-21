@@ -1,14 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { z } from 'zod';
 
-vi.mock('openai', () => ({
-  default: vi.fn(),
-}));
-
-vi.mock('@ai-sdk/openai', () => ({
-  createOpenAI: vi.fn().mockReturnValue(vi.fn().mockReturnValue('mock-model')),
-}));
-
 vi.mock('../src/transcribe.js', () => ({
   transcribe: vi.fn(),
 }));
@@ -26,51 +18,72 @@ const ContactSchema = z.object({
   email: z.string(),
 });
 
+const mockTranscriptionModel = { modelId: 'whisper-1' } as any;
+const mockLanguageModel = { modelId: 'gpt-4o-mini' } as any;
+
+function createClient() {
+  return createVoiceFill({
+    transcriptionModel: mockTranscriptionModel,
+    model: mockLanguageModel,
+  });
+}
+
 describe('createVoiceFill', () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
   it('returns a client with transcribe, extract, and fill methods', () => {
-    const client = createVoiceFill({ apiKey: 'test-key' });
+    const client = createClient();
 
     expect(client.transcribe).toBeTypeOf('function');
     expect(client.extract).toBeTypeOf('function');
     expect(client.fill).toBeTypeOf('function');
   });
 
-  it('transcribe() delegates to transcribe module', async () => {
+  it('transcribe() delegates to transcribe module with the transcription model', async () => {
     vi.mocked(transcribeMod.transcribe).mockResolvedValue({ text: 'hello' });
-    const client = createVoiceFill({ apiKey: 'test-key' });
+    const client = createClient();
 
     const result = await client.transcribe(Buffer.from('audio'));
 
     expect(result).toEqual({ text: 'hello' });
     expect(transcribeMod.transcribe).toHaveBeenCalledOnce();
+    expect(transcribeMod.transcribe).toHaveBeenCalledWith(
+      mockTranscriptionModel,
+      expect.anything(),
+      undefined,
+    );
   });
 
-  it('extract() delegates to extract module', async () => {
+  it('extract() delegates to extract module with the language model', async () => {
     const expected = { name: 'John', email: 'john@test.com' };
     vi.mocked(extractMod.extract).mockResolvedValue(expected);
-    const client = createVoiceFill({ apiKey: 'test-key' });
+    const client = createClient();
 
     const result = await client.extract('some text', { schema: ContactSchema });
 
     expect(result).toEqual(expected);
     expect(extractMod.extract).toHaveBeenCalledOnce();
+    expect(extractMod.extract).toHaveBeenCalledWith(
+      mockLanguageModel,
+      'some text',
+      expect.anything(),
+    );
   });
 
   it('transcribe() forwards options to transcribe module', async () => {
     vi.mocked(transcribeMod.transcribe).mockResolvedValue({ text: 'hej' });
-    const client = createVoiceFill({ apiKey: 'test-key' });
+    const client = createClient();
 
-    await client.transcribe(Buffer.from('audio'), { language: 'sl' });
+    await client.transcribe(Buffer.from('audio'), {
+      providerOptions: { openai: { language: 'sl' } },
+    });
 
     expect(transcribeMod.transcribe).toHaveBeenCalledWith(
+      mockTranscriptionModel,
       expect.anything(),
-      expect.anything(),
-      expect.anything(),
-      { language: 'sl' },
+      { providerOptions: { openai: { language: 'sl' } } },
     );
   });
 
@@ -83,7 +96,7 @@ describe('createVoiceFill', () => {
       email: 'john@test.com',
     });
 
-    const client = createVoiceFill({ apiKey: 'test-key' });
+    const client = createClient();
     const result = await client.fill(Buffer.from('audio'), { schema: ContactSchema });
 
     expect(result.transcript).toBe('My name is John, email john@test.com');
@@ -96,17 +109,18 @@ describe('createVoiceFill', () => {
     vi.mocked(transcribeMod.transcribe).mockResolvedValue({ text: 'hej' });
     vi.mocked(extractMod.extract).mockResolvedValue({ name: '', email: '' });
 
-    const client = createVoiceFill({ apiKey: 'test-key' });
+    const client = createClient();
     await client.fill(Buffer.from('audio'), {
       schema: ContactSchema,
-      transcribe: { language: 'sl', prompt: 'Slovenian names' },
+      transcribe: {
+        providerOptions: { deepgram: { language: 'sl', smartFormat: true } },
+      },
     });
 
     expect(transcribeMod.transcribe).toHaveBeenCalledWith(
+      mockTranscriptionModel,
       expect.anything(),
-      expect.anything(),
-      expect.anything(),
-      { language: 'sl', prompt: 'Slovenian names' },
+      { providerOptions: { deepgram: { language: 'sl', smartFormat: true } } },
     );
   });
 });

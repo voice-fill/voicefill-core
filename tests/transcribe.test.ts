@@ -1,123 +1,147 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { AudioFormatError, TranscriptionError } from '../src/errors.js';
 
-vi.mock('node:fs', () => ({
-  default: { createReadStream: vi.fn().mockReturnValue('fake-stream') },
+vi.mock('ai', () => ({
+  experimental_transcribe: vi.fn(),
 }));
 
+vi.mock('node:fs/promises', () => ({
+  readFile: vi.fn().mockResolvedValue(Buffer.from('fake-audio-from-file')),
+}));
+
+import { experimental_transcribe } from 'ai';
 import { transcribe } from '../src/transcribe.js';
 
 const SUPPORTED_FORMATS = ['flac', 'm4a', 'mp3', 'mp4', 'mpeg', 'mpga', 'oga', 'ogg', 'wav', 'webm'];
 
-function createMockClient(transcriptText: string) {
-  return {
-    audio: {
-      transcriptions: {
-        create: vi.fn().mockResolvedValue({ text: transcriptText }),
-      },
-    },
-  } as any;
-}
+const mockModel = {} as any;
 
 describe('transcribe', () => {
-  it('sends audio buffer to Whisper and returns transcript', async () => {
-    const mock = createMockClient('Hello, my name is John.');
-    const result = await transcribe(mock, Buffer.from('fake-audio'), 'whisper-1');
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('sends audio buffer and returns transcript', async () => {
+    vi.mocked(experimental_transcribe).mockResolvedValue({
+      text: 'Hello, my name is John.',
+      segments: [],
+    } as any);
+
+    const result = await transcribe(mockModel, Buffer.from('fake-audio'));
 
     expect(result).toEqual({ text: 'Hello, my name is John.' });
-    expect(mock.audio.transcriptions.create).toHaveBeenCalledOnce();
-    expect(mock.audio.transcriptions.create).toHaveBeenCalledWith(
-      expect.objectContaining({ model: 'whisper-1' }),
+    expect(experimental_transcribe).toHaveBeenCalledOnce();
+    expect(experimental_transcribe).toHaveBeenCalledWith(
+      expect.objectContaining({
+        model: mockModel,
+        audio: expect.any(Buffer),
+      }),
     );
   });
 
-  it('sends audio file path to Whisper and returns transcript', async () => {
-    const mock = createMockClient('Test transcript from file.');
-    const result = await transcribe(mock, '/tmp/test-audio.mp3', 'whisper-1');
+  it('sends audio file path and returns transcript', async () => {
+    vi.mocked(experimental_transcribe).mockResolvedValue({
+      text: 'Test transcript from file.',
+      segments: [],
+    } as any);
+
+    const result = await transcribe(mockModel, '/tmp/test-audio.mp3');
 
     expect(result).toEqual({ text: 'Test transcript from file.' });
-    expect(mock.audio.transcriptions.create).toHaveBeenCalledOnce();
+    expect(experimental_transcribe).toHaveBeenCalledOnce();
   });
 
   it('throws on unsupported audio format (file path)', async () => {
-    const mock = createMockClient('');
-
     await expect(
-      transcribe(mock, '/tmp/audio.txt', 'whisper-1'),
+      transcribe(mockModel, '/tmp/audio.txt'),
     ).rejects.toThrow('Unsupported audio format');
   });
 
   it('accepts all Whisper-supported formats', async () => {
-    const mock = createMockClient('ok');
+    vi.mocked(experimental_transcribe).mockResolvedValue({
+      text: 'ok',
+      segments: [],
+    } as any);
 
     for (const ext of SUPPORTED_FORMATS) {
       await expect(
-        transcribe(mock, `/tmp/audio.${ext}`, 'whisper-1'),
+        transcribe(mockModel, `/tmp/audio.${ext}`),
       ).resolves.toEqual({ text: 'ok' });
     }
   });
 
   it('accepts named buffer with original filename', async () => {
-    const mock = createMockClient('Named buffer transcript.');
+    vi.mocked(experimental_transcribe).mockResolvedValue({
+      text: 'Named buffer transcript.',
+      segments: [],
+    } as any);
+
     const result = await transcribe(
-      mock,
+      mockModel,
       { buffer: Buffer.from('fake-audio'), name: 'recording.m4a' },
-      'whisper-1',
     );
 
     expect(result).toEqual({ text: 'Named buffer transcript.' });
-    expect(mock.audio.transcriptions.create).toHaveBeenCalledOnce();
+    expect(experimental_transcribe).toHaveBeenCalledOnce();
   });
 
   it('throws AudioFormatError on unsupported format in named buffer', async () => {
-    const mock = createMockClient('');
-
     await expect(
-      transcribe(mock, { buffer: Buffer.from('data'), name: 'file.txt' }, 'whisper-1'),
+      transcribe(mockModel, { buffer: Buffer.from('data'), name: 'file.txt' }),
     ).rejects.toThrow(AudioFormatError);
   });
 
-  it('passes language option to Whisper API', async () => {
-    const mock = createMockClient('Pozdravljen, sem Janez.');
-    const result = await transcribe(mock, Buffer.from('audio'), 'whisper-1', { language: 'sl' });
+  it('passes providerOptions through to the SDK', async () => {
+    vi.mocked(experimental_transcribe).mockResolvedValue({
+      text: 'Pozdravljen, sem Janez.',
+      segments: [],
+    } as any);
 
-    expect(result).toEqual({ text: 'Pozdravljen, sem Janez.' });
-    expect(mock.audio.transcriptions.create).toHaveBeenCalledWith(
-      expect.objectContaining({ language: 'sl' }),
-    );
-  });
-
-  it('passes prompt option to Whisper API', async () => {
-    const mock = createMockClient('VoiceFill is great.');
-    const result = await transcribe(mock, Buffer.from('audio'), 'whisper-1', {
-      prompt: 'The transcript contains product names like VoiceFill.',
+    const result = await transcribe(mockModel, Buffer.from('audio'), {
+      providerOptions: { openai: { language: 'sl' } },
     });
 
-    expect(result).toEqual({ text: 'VoiceFill is great.' });
-    expect(mock.audio.transcriptions.create).toHaveBeenCalledWith(
-      expect.objectContaining({ prompt: 'The transcript contains product names like VoiceFill.' }),
+    expect(result).toEqual({ text: 'Pozdravljen, sem Janez.' });
+    expect(experimental_transcribe).toHaveBeenCalledWith(
+      expect.objectContaining({
+        providerOptions: { openai: { language: 'sl' } },
+      }),
     );
   });
 
-  it('omits language and prompt when not provided', async () => {
-    const mock = createMockClient('Hello.');
-    await transcribe(mock, Buffer.from('audio'), 'whisper-1');
+  it('supports any provider via providerOptions', async () => {
+    vi.mocked(experimental_transcribe).mockResolvedValue({
+      text: 'Deepgram result.',
+      segments: [],
+    } as any);
 
-    const callArgs = mock.audio.transcriptions.create.mock.calls[0][0];
-    expect(callArgs).not.toHaveProperty('language');
-    expect(callArgs).not.toHaveProperty('prompt');
+    await transcribe(mockModel, Buffer.from('audio'), {
+      providerOptions: { deepgram: { language: 'sl', smartFormat: true } },
+    });
+
+    expect(experimental_transcribe).toHaveBeenCalledWith(
+      expect.objectContaining({
+        providerOptions: { deepgram: { language: 'sl', smartFormat: true } },
+      }),
+    );
   });
 
-  it('wraps Whisper API errors in TranscriptionError', async () => {
-    const mock = {
-      audio: {
-        transcriptions: {
-          create: vi.fn().mockRejectedValue(new Error('API rate limit exceeded')),
-        },
-      },
-    } as any;
+  it('omits providerOptions when not provided', async () => {
+    vi.mocked(experimental_transcribe).mockResolvedValue({
+      text: 'Hello.',
+      segments: [],
+    } as any);
 
-    const error = await transcribe(mock, Buffer.from('audio'), 'whisper-1').catch((e) => e);
+    await transcribe(mockModel, Buffer.from('audio'));
+
+    const callArgs = vi.mocked(experimental_transcribe).mock.calls[0][0];
+    expect(callArgs).not.toHaveProperty('providerOptions');
+  });
+
+  it('wraps API errors in TranscriptionError', async () => {
+    vi.mocked(experimental_transcribe).mockRejectedValue(new Error('API rate limit exceeded'));
+
+    const error = await transcribe(mockModel, Buffer.from('audio')).catch((e) => e);
 
     expect(error).toBeInstanceOf(TranscriptionError);
     expect(error.message).toContain('API rate limit exceeded');

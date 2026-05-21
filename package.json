@@ -26,9 +26,7 @@
     "zod": "^3.23.0"
   },
   "dependencies": {
-    "@ai-sdk/openai": "^3.0.63",
-    "ai": "^6.0.180",
-    "openai": "^6.1.0"
+    "ai": "^6.0.180"
   },
   "devDependencies": {
     "@types/node": "^25.7.0",

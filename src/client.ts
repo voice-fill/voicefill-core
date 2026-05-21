@@ -1,5 +1,3 @@
-import OpenAI from 'openai';
-import { createOpenAI } from '@ai-sdk/openai';
 import type { z } from 'zod';
 import type {
   AudioInput,
@@ -26,23 +24,18 @@ export interface VoiceFillClient {
 }
 
 export function createVoiceFill(config: VoiceFillConfig): VoiceFillClient {
-  const whisperClient = new OpenAI({ apiKey: config.apiKey });
-  const provider = createOpenAI({ apiKey: config.apiKey });
-  const model = provider(config.model ?? 'gpt-4o-mini');
-  const whisperModel = config.whisperModel ?? 'whisper-1';
-
   return {
     async transcribe(input, options) {
-      return transcribeAudio(whisperClient, input, whisperModel, options);
+      return transcribeAudio(config.transcriptionModel, input, options);
     },
 
     async extract(text, options) {
-      return extractData(model, text, options);
+      return extractData(config.model, text, options);
     },
 
     async fill(input, options) {
-      const transcript = await transcribeAudio(whisperClient, input, whisperModel, options.transcribe);
-      const data = await extractData(model, transcript.text, options);
+      const transcript = await transcribeAudio(config.transcriptionModel, input, options.transcribe);
+      const data = await extractData(config.model, transcript.text, options);
       return { data, transcript: transcript.text };
     },
   };

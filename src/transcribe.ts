@@ -1,7 +1,7 @@
-import fs from 'node:fs';
+import { experimental_transcribe as transcribeAudio } from 'ai';
+import type { TranscriptionModel } from 'ai';
+import { readFile } from 'node:fs/promises';
 import path from 'node:path';
-import type OpenAI from 'openai';
-import { toFile } from 'openai/core/uploads';
 import type { AudioInput, TranscribeOptions, TranscribeResult } from './types.js';
 import { AudioFormatError, TranscriptionError } from './errors.js';
 
@@ -16,33 +16,31 @@ function validateAudioFormat(fileName: string): void {
   }
 }
 
-async function normalizeAudioInput(input: AudioInput) {
+async function normalizeAudioInput(input: AudioInput): Promise<Buffer> {
   if (typeof input === 'string') {
     validateAudioFormat(input);
-    return fs.createReadStream(input);
+    return readFile(input);
   }
   if (Buffer.isBuffer(input)) {
-    return toFile(input, 'audio.webm');
+    return input;
   }
   validateAudioFormat(input.name);
-  return toFile(input.buffer, input.name);
+  return input.buffer;
 }
 
 export async function transcribe(
-  client: OpenAI,
+  model: TranscriptionModel,
   input: AudioInput,
-  model: string,
   options?: TranscribeOptions,
 ): Promise<TranscribeResult> {
-  const file = await normalizeAudioInput(input);
+  const audio = await normalizeAudioInput(input);
   try {
-    const response = await client.audio.transcriptions.create({
-      file,
+    const { text } = await transcribeAudio({
       model,
-      ...(options?.language && { language: options.language }),
-      ...(options?.prompt && { prompt: options.prompt }),
+      audio,
+      ...(options?.providerOptions && { providerOptions: options.providerOptions }),
     });
-    return { text: response.text };
+    return { text };
   } catch (error) {
     throw new TranscriptionError(
       `Transcription failed: ${error instanceof Error ? error.message : String(error)}`,
