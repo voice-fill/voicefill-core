@@ -1,23 +1,35 @@
 # @voicefill/core
 
-Turn audio into structured data. Combines OpenAI Whisper (transcription) and AI-powered structured output extraction into a single pipeline — with optional tool calling for data enrichment.
+Turn audio into structured data. Combines speech-to-text transcription and AI-powered structured output extraction into a single pipeline — with optional tool calling for data enrichment.
+
+Works with any transcription provider supported by the [Vercel AI SDK](https://ai-sdk.dev): OpenAI Whisper, Deepgram Nova-3, AssemblyAI, Azure Speech, and more.
 
 ## Install
 
 ```bash
-npm install @voicefill/core zod
+npm install @voicefill/core ai zod
 ```
 
-`zod` is a peer dependency — you use it to define the shape of your extracted data.
+Then install the AI SDK provider(s) you want to use:
+
+```bash
+# Pick one (or more) transcription providers:
+npm install @ai-sdk/openai       # OpenAI Whisper
+npm install @ai-sdk/deepgram     # Deepgram Nova-3
+npm install @ai-sdk/assemblyai   # AssemblyAI
+npm install @ai-sdk/azure        # Azure Speech
+```
 
 ## Quick Start
 
 ```typescript
 import { createVoiceFill } from '@voicefill/core';
+import { openai } from '@ai-sdk/openai';
 import { z } from 'zod';
 
 const vf = createVoiceFill({
-  apiKey: process.env.OPENAI_API_KEY,
+  model: openai('gpt-4o-mini'),
+  transcriptionModel: openai.transcription('whisper-1'),
 });
 
 const result = await vf.fill('./recording.mp3', {
@@ -35,6 +47,39 @@ console.log(result.transcript);
 
 console.log(result.data);
 // { firstName: "John", lastName: "Doe", email: "john@example.com", phone: "555-0123" }
+```
+
+### Switching Providers
+
+The transcription and language models are independent — swap either one without changing anything else:
+
+```typescript
+import { deepgram } from '@ai-sdk/deepgram';
+import { openai } from '@ai-sdk/openai';
+
+const vf = createVoiceFill({
+  model: openai('gpt-4o-mini'),
+  transcriptionModel: deepgram.transcription('nova-3'),
+});
+```
+
+Provider-specific options (language, formatting, etc.) are passed through `providerOptions`:
+
+```typescript
+// OpenAI Whisper
+await vf.transcribe(audio, {
+  providerOptions: { openai: { language: 'sl' } },
+});
+
+// Deepgram
+await vf.transcribe(audio, {
+  providerOptions: { deepgram: { language: 'sl', smartFormat: true } },
+});
+
+// AssemblyAI
+await vf.transcribe(audio, {
+  providerOptions: { assemblyai: { languageCode: 'sl' } },
+});
 ```
 
 ## Tool Calling
@@ -96,14 +141,15 @@ The `execute` function can return anything — the AI sees the result and uses i
 Creates a voice-fill client.
 
 ```typescript
+import { openai } from '@ai-sdk/openai';
+
 const vf = createVoiceFill({
-  apiKey: 'sk-...',           // OpenAI API key (required)
-  model: 'gpt-4o-mini',      // Model for structured extraction (default: 'gpt-4o-mini')
-  whisperModel: 'whisper-1',  // Model for transcription (default: 'whisper-1')
+  model: openai('gpt-4o-mini'),                    // Language model for extraction (required)
+  transcriptionModel: openai.transcription('whisper-1'), // Transcription model (required)
 });
 ```
 
-Returns a client with three methods: [`fill`](#vffillaudio-options), [`transcribe`](#vftranscribeaudio), and [`extract`](#vfextracttext-options).
+Returns a client with three methods: [`fill`](#vffillaudio-options), [`transcribe`](#vftranscribeaudio-options), and [`extract`](#vfextracttext-options).
 
 ---
 
@@ -135,14 +181,15 @@ result.transcript  // raw transcript text
 | `options.prompt` | `string?` | System prompt guiding the extraction |
 | `options.tools` | `VoiceFillTool[]?` | Tools the AI can call during extraction |
 | `options.maxSteps` | `number?` | Max tool call rounds (default: 5) |
+| `options.transcribe` | `TranscribeOptions?` | Options passed to the transcription step |
 
 **Returns:** `{ data: T, transcript: string }` where `T` is inferred from your schema.
 
 ---
 
-### `vf.transcribe(audio)`
+### `vf.transcribe(audio, options?)`
 
-Transcribes audio to text using OpenAI Whisper.
+Transcribes audio to text.
 
 ```typescript
 const result = await vf.transcribe('./meeting.wav');
@@ -154,6 +201,7 @@ console.log(result.text);
 | Name | Type | Description |
 |------|------|-------------|
 | `audio` | `string \| Buffer \| { buffer, name }` | File path, audio buffer, or named buffer |
+| `options.providerOptions` | `ProviderOptions?` | Provider-specific transcription options |
 
 **Returns:** `{ text: string }`
 
@@ -208,7 +256,7 @@ try {
   if (error instanceof AudioFormatError) {
     // unsupported file format — error.format has the extension
   } else if (error instanceof TranscriptionError) {
-    // Whisper API failed — error.cause has the original error
+    // transcription API failed — error.cause has the original error
   } else if (error instanceof ExtractionError) {
     // structured output extraction failed — error.cause has the original error
   }
@@ -224,7 +272,7 @@ File paths are validated before sending. Unsupported formats throw `AudioFormatE
 When passing a `Buffer`, wrap it with the original filename so the format is detected correctly:
 
 ```typescript
-// Plain buffer — sent as audio/webm
+// Plain buffer — sent as-is
 await vf.fill(buffer, { schema });
 
 // Named buffer — preserves original format
