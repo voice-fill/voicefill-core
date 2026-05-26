@@ -126,10 +126,17 @@ export interface FillOptions<T extends z.ZodType> extends ExtractOptions<T> {
   transcribe?: TranscribeOptions;
 }
 
-/** Result of a `fill()` call — the extracted data plus the raw transcript. */
+/** Result of a `fill()` call — the extracted data plus full transcription and usage metadata. */
 export interface FillResult<T> {
   /** Structured data extracted from the transcript, matching the provided Zod schema. */
   data: T;
-  /** The raw transcript produced by the transcription model. */
+  /** The raw transcript text (shorthand for `transcription.text`). */
   transcript: string;
+  /** Full transcription result including segments, duration, and detected language. */
+  transcription: TranscribeResult;
+  /** Token usage from the extraction step. */
+  usage: {
+    /** Token usage from the LLM extraction call(s). */
+    extraction: TokenUsage;
+  };
 }
