@@ -36,6 +36,10 @@ export type ProviderOptions = Record<string, Record<string, JSONValue | undefine
 export interface TranscribeOptions {
   /** Provider-specific options forwarded to the transcription model (e.g. language hints, prompts). */
   providerOptions?: ProviderOptions;
+  /** Maximum number of retries. Set to 0 to disable. Default: 2. */
+  maxRetries?: number;
+  /** Abort signal to cancel the transcription request. */
+  abortSignal?: AbortSignal;
 }
 
 /** A timestamped segment of the transcription. */
@@ -110,6 +114,10 @@ export interface ExtractOptions<T extends z.ZodType> {
   tools?: VoiceFillTool[];
   /** Maximum number of tool-calling steps before the AI must produce a final answer. Defaults to 5. */
   maxSteps?: number;
+  /** Maximum number of retries per LLM call. Set to 0 to disable. Default: 2. */
+  maxRetries?: number;
+  /** Abort signal to cancel the extraction request. */
+  abortSignal?: AbortSignal;
 }
 
 /** Options for the combined transcribe-and-extract `fill()` method. */
