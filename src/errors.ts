@@ -1,3 +1,4 @@
+/** Base error class for all VoiceFill errors. */
 export class VoiceFillError extends Error {
   constructor(message: string, options?: ErrorOptions) {
     super(message, options);
@@ -5,6 +6,7 @@ export class VoiceFillError extends Error {
   }
 }
 
+/** Thrown when the transcription provider fails or returns an error. */
 export class TranscriptionError extends VoiceFillError {
   constructor(message: string, cause?: Error) {
     super(message, { cause });
@@ -12,6 +14,7 @@ export class TranscriptionError extends VoiceFillError {
   }
 }
 
+/** Thrown when structured data extraction fails (e.g. LLM error or schema validation failure). */
 export class ExtractionError extends VoiceFillError {
   constructor(message: string, cause?: Error) {
     super(message, { cause });
@@ -19,7 +22,9 @@ export class ExtractionError extends VoiceFillError {
   }
 }
 
+/** Thrown when the audio file has an unsupported format. */
 export class AudioFormatError extends VoiceFillError {
+  /** The unsupported file extension that was provided. */
   readonly format: string;
 
   constructor(format: string) {

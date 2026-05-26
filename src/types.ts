@@ -1,44 +1,93 @@
 import type { LanguageModel, TranscriptionModel } from 'ai';
 import type { z } from 'zod';
 
+/** Configuration for creating a VoiceFill client. */
 export interface VoiceFillConfig {
+  /** Language model used for structured data extraction (e.g. `openai('gpt-4o')`). */
   model: LanguageModel;
+  /** Transcription model used for speech-to-text (e.g. `openai.transcription('whisper-1')`). */
   transcriptionModel: TranscriptionModel;
 }
 
+/**
+ * Audio input accepted by transcribe and fill methods.
+ * Pass a file path, a raw Buffer, or a `{ buffer, name }` object where `name` includes
+ * the file extension for format validation.
+ */
 export type AudioInput = string | Buffer | { buffer: Buffer; name: string };
 
 import type { JSONValue } from 'ai';
 
+/** Provider-specific options passed through to the underlying transcription model. */
 export type ProviderOptions = Record<string, Record<string, JSONValue | undefined>>;
 
+/**
+ * Options for the transcription step.
+ *
+ * @example Pass a language hint and prompt to OpenAI Whisper:
+ * ```ts
+ * await vf.transcribe('recording.mp3', {
+ *   providerOptions: {
+ *     openai: { language: 'sl', prompt: 'Slovenian medical form dictation' },
+ *   },
+ * });
+ * ```
+ */
 export interface TranscribeOptions {
+  /** Provider-specific options forwarded to the transcription model (e.g. language hints, prompts). */
   providerOptions?: ProviderOptions;
 }
 
+/** Result of a standalone transcription call. */
 export interface TranscribeResult {
+  /** The transcribed text. */
   text: string;
 }
 
+/** A tool the AI can call during extraction to gather additional context. */
 export interface VoiceFillTool<T extends z.ZodType = z.ZodType> {
+  /** Unique tool name. */
   name: string;
+  /** Description shown to the AI so it knows when to call this tool. */
   description: string;
+  /** Zod schema defining the tool's input parameters. */
   parameters: T;
+  /** Function executed when the AI invokes this tool. */
   execute: (args: z.infer<T>) => Promise<unknown>;
 }
 
+/**
+ * Options for the extraction step.
+ *
+ * @example
+ * ```ts
+ * await vf.extract(transcript, {
+ *   schema: z.object({ name: z.string(), address: z.string() }),
+ *   prompt: 'Extract patient info from a Slovenian medical form dictation.',
+ * });
+ * ```
+ */
 export interface ExtractOptions<T extends z.ZodType> {
+  /** Zod schema defining the desired output structure. */
   schema: T;
+  /** System prompt that tells the LLM what it's extracting and from what domain. Defaults to a generic extraction prompt. */
   prompt?: string;
+  /** Tools the AI can call during extraction to enrich data (e.g. contact lookup, address validation). */
   tools?: VoiceFillTool[];
+  /** Maximum number of tool-calling steps before the AI must produce a final answer. Defaults to 5. */
   maxSteps?: number;
 }
 
+/** Options for the combined transcribe-and-extract `fill()` method. */
 export interface FillOptions<T extends z.ZodType> extends ExtractOptions<T> {
+  /** Options forwarded to the transcription step. */
   transcribe?: TranscribeOptions;
 }
 
+/** Result of a `fill()` call — the extracted data plus the raw transcript. */
 export interface FillResult<T> {
+  /** Structured data extracted from the transcript, matching the provided Zod schema. */
   data: T;
+  /** The raw transcript produced by the transcription model. */
   transcript: string;
 }
