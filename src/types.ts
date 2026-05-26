@@ -38,10 +38,36 @@ export interface TranscribeOptions {
   providerOptions?: ProviderOptions;
 }
 
+/** A timestamped segment of the transcription. */
+export interface TranscribeSegment {
+  /** The transcribed text for this segment. */
+  text: string;
+  /** Start time in seconds. */
+  startSecond: number;
+  /** End time in seconds. */
+  endSecond: number;
+}
+
 /** Result of a standalone transcription call. */
 export interface TranscribeResult {
   /** The transcribed text. */
   text: string;
+  /** Timestamped segments of the transcription. */
+  segments: TranscribeSegment[];
+  /** Duration of the audio in seconds. Useful for cost calculations. */
+  durationInSeconds?: number;
+  /** Detected or specified language code (e.g. `'sl'`, `'en'`). */
+  language?: string;
+}
+
+/** Token usage information from an LLM call. */
+export interface TokenUsage {
+  /** Number of input (prompt) tokens consumed. */
+  inputTokens: number | undefined;
+  /** Number of output (completion) tokens generated. */
+  outputTokens: number | undefined;
+  /** Total tokens (input + output). */
+  totalTokens: number | undefined;
 }
 
 /** A tool the AI can call during extraction to gather additional context. */
@@ -54,6 +80,14 @@ export interface VoiceFillTool<T extends z.ZodType = z.ZodType> {
   parameters: T;
   /** Function executed when the AI invokes this tool. */
   execute: (args: z.infer<T>) => Promise<unknown>;
+}
+
+/** Result of a standalone extraction call. */
+export interface ExtractResult<T> {
+  /** Structured data extracted from the text, matching the provided Zod schema. */
+  data: T;
+  /** Token usage from the extraction LLM call(s). */
+  usage: TokenUsage;
 }
 
 /**
