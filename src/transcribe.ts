@@ -35,12 +35,19 @@ export async function transcribe(
 ): Promise<TranscribeResult> {
   const audio = await normalizeAudioInput(input);
   try {
-    const { text } = await transcribeAudio({
+    const result = await transcribeAudio({
       model,
       audio,
       ...(options?.providerOptions && { providerOptions: options.providerOptions }),
+      ...(options?.maxRetries !== undefined && { maxRetries: options.maxRetries }),
+      ...(options?.abortSignal && { abortSignal: options.abortSignal }),
     });
-    return { text };
+    return {
+      text: result.text,
+      segments: result.segments,
+      durationInSeconds: result.durationInSeconds,
+      language: result.language,
+    };
   } catch (error) {
     throw new TranscriptionError(
       `Transcription failed: ${error instanceof Error ? error.message : String(error)}`,

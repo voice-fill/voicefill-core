@@ -29,7 +29,7 @@ describe('transcribe', () => {
 
     const result = await transcribe(mockModel, Buffer.from('fake-audio'));
 
-    expect(result).toEqual({ text: 'Hello, my name is John.' });
+    expect(result.text).toBe('Hello, my name is John.');
     expect(experimental_transcribe).toHaveBeenCalledOnce();
     expect(experimental_transcribe).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -47,7 +47,7 @@ describe('transcribe', () => {
 
     const result = await transcribe(mockModel, '/tmp/test-audio.mp3');
 
-    expect(result).toEqual({ text: 'Test transcript from file.' });
+    expect(result.text).toBe('Test transcript from file.');
     expect(experimental_transcribe).toHaveBeenCalledOnce();
   });
 
@@ -66,7 +66,7 @@ describe('transcribe', () => {
     for (const ext of SUPPORTED_FORMATS) {
       await expect(
         transcribe(mockModel, `/tmp/audio.${ext}`),
-      ).resolves.toEqual({ text: 'ok' });
+      ).resolves.toMatchObject({ text: 'ok' });
     }
   });
 
@@ -81,7 +81,7 @@ describe('transcribe', () => {
       { buffer: Buffer.from('fake-audio'), name: 'recording.m4a' },
     );
 
-    expect(result).toEqual({ text: 'Named buffer transcript.' });
+    expect(result.text).toBe('Named buffer transcript.');
     expect(experimental_transcribe).toHaveBeenCalledOnce();
   });
 
@@ -101,7 +101,7 @@ describe('transcribe', () => {
       providerOptions: { openai: { language: 'sl' } },
     });
 
-    expect(result).toEqual({ text: 'Pozdravljen, sem Janez.' });
+    expect(result.text).toBe('Pozdravljen, sem Janez.');
     expect(experimental_transcribe).toHaveBeenCalledWith(
       expect.objectContaining({
         providerOptions: { openai: { language: 'sl' } },
@@ -136,6 +136,100 @@ describe('transcribe', () => {
 
     const callArgs = vi.mocked(experimental_transcribe).mock.calls[0][0];
     expect(callArgs).not.toHaveProperty('providerOptions');
+  });
+
+  it('returns segments from the transcription response', async () => {
+    const segments = [
+      { text: 'Hello.', startSecond: 0, endSecond: 1.2 },
+      { text: 'My name is John.', startSecond: 1.3, endSecond: 3.0 },
+    ];
+    vi.mocked(experimental_transcribe).mockResolvedValue({
+      text: 'Hello. My name is John.',
+      segments,
+      durationInSeconds: 3.0,
+      language: 'en',
+    } as any);
+
+    const result = await transcribe(mockModel, Buffer.from('fake-audio'));
+
+    expect(result.segments).toEqual(segments);
+  });
+
+  it('returns durationInSeconds from the transcription response', async () => {
+    vi.mocked(experimental_transcribe).mockResolvedValue({
+      text: 'Test.',
+      segments: [],
+      durationInSeconds: 12.5,
+      language: 'sl',
+    } as any);
+
+    const result = await transcribe(mockModel, Buffer.from('fake-audio'));
+
+    expect(result.durationInSeconds).toBe(12.5);
+  });
+
+  it('returns language from the transcription response', async () => {
+    vi.mocked(experimental_transcribe).mockResolvedValue({
+      text: 'Pozdravljen.',
+      segments: [],
+      durationInSeconds: 1.0,
+      language: 'sl',
+    } as any);
+
+    const result = await transcribe(mockModel, Buffer.from('fake-audio'));
+
+    expect(result.language).toBe('sl');
+  });
+
+  it('returns undefined for durationInSeconds and language when provider omits them', async () => {
+    vi.mocked(experimental_transcribe).mockResolvedValue({
+      text: 'Hello.',
+      segments: [],
+      durationInSeconds: undefined,
+      language: undefined,
+    } as any);
+
+    const result = await transcribe(mockModel, Buffer.from('fake-audio'));
+
+    expect(result.durationInSeconds).toBeUndefined();
+    expect(result.language).toBeUndefined();
+  });
+
+  it('passes maxRetries through to the SDK', async () => {
+    vi.mocked(experimental_transcribe).mockResolvedValue({
+      text: 'Hello.', segments: [],
+    } as any);
+
+    await transcribe(mockModel, Buffer.from('audio'), { maxRetries: 0 });
+
+    expect(experimental_transcribe).toHaveBeenCalledWith(
+      expect.objectContaining({ maxRetries: 0 }),
+    );
+  });
+
+  it('passes abortSignal through to the SDK', async () => {
+    vi.mocked(experimental_transcribe).mockResolvedValue({
+      text: 'Hello.', segments: [],
+    } as any);
+
+    const controller = new AbortController();
+    await transcribe(mockModel, Buffer.from('audio'), { abortSignal: controller.signal });
+
+    expect(experimental_transcribe).toHaveBeenCalledWith(
+      expect.objectContaining({ abortSignal: controller.signal }),
+    );
+  });
+
+  it('omits maxRetries and abortSignal when not provided', async () => {
+    vi.mocked(experimental_transcribe).mockResolvedValue({
+      text: 'Hello.', segments: [],
+    } as any);
+
+    await transcribe(mockModel, Buffer.from('audio'));
+
+    const callArgs = vi.mocked(experimental_transcribe).mock.calls[0][0];
+    expect(callArgs).not.toHaveProperty('maxRetries');
+    expect(callArgs).not.toHaveProperty('abortSignal');
   });
 
   it('wraps API errors in TranscriptionError', async () => {
