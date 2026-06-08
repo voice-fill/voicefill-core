@@ -1,7 +1,7 @@
 {
   "name": "@voicefill/core",
   "version": "0.1.0",
-  "description": "Voice-driven form filling — transcribe audio and extract structured data with OpenAI",
+  "description": "Transcribe audio and extract structured data in one pipeline — provider-agnostic via the Vercel AI SDK.",
   "type": "module",
   "main": "./dist/index.cjs",
   "module": "./dist/index.js",
@@ -16,26 +16,50 @@
   "files": [
     "dist"
   ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "sideEffects": false,
+  "keywords": [
+    "transcription",
+    "speech-to-text",
+    "structured-output",
+    "voice",
+    "ai-sdk",
+    "whisper",
+    "zod",
+    "form-filling",
+    "extraction"
+  ],
   "scripts": {
     "build": "tsup",
     "test": "vitest run",
     "test:watch": "vitest",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "npm run typecheck && npm test && npm run build"
   },
   "peerDependencies": {
+    "ai": "^6.0.0",
     "zod": "^3.23.0"
-  },
-  "dependencies": {
-    "ai": "^6.0.180"
   },
   "devDependencies": {
     "@types/node": "^25.7.0",
+    "ai": "^6.0.180",
     "tsup": "^8.4.0",
     "typescript": "^5.7.0",
     "vitest": "^3.1.0",
     "zod": "^3.24.0"
   },
   "license": "MIT",
+  "author": "amadejzr <amadej@jerlah.si>",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/amadejzr/voicefill-core.git"
+  },
+  "bugs": {
+    "url": "https://github.com/amadejzr/voicefill-core/issues"
+  },
+  "homepage": "https://github.com/amadejzr/voicefill-core#readme",
   "engines": {
     "node": ">=18"
   }

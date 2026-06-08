@@ -7,6 +7,7 @@ vi.mock('../src/transcribe.js', () => ({
 
 vi.mock('../src/extract.js', () => ({
   extract: vi.fn(),
+  resume: vi.fn(),
 }));
 
 import { createVoiceFill } from '../src/client.js';
@@ -33,12 +34,13 @@ describe('createVoiceFill', () => {
     vi.clearAllMocks();
   });
 
-  it('returns a client with transcribe, extract, and fill methods', () => {
+  it('returns a client with transcribe, extract, fill, and resume methods', () => {
     const client = createClient();
 
     expect(client.transcribe).toBeTypeOf('function');
     expect(client.extract).toBeTypeOf('function');
     expect(client.fill).toBeTypeOf('function');
+    expect(client.resume).toBeTypeOf('function');
   });
 
   it('transcribe() delegates to transcribe module with the transcription model', async () => {
@@ -53,7 +55,6 @@ describe('createVoiceFill', () => {
     const result = await client.transcribe(Buffer.from('audio'));
 
     expect(result.text).toBe('hello');
-    expect(transcribeMod.transcribe).toHaveBeenCalledOnce();
     expect(transcribeMod.transcribe).toHaveBeenCalledWith(
       mockTranscriptionModel,
       expect.anything(),
@@ -61,47 +62,23 @@ describe('createVoiceFill', () => {
     );
   });
 
-  it('extract() delegates to extract module with the language model', async () => {
-    const expected = { name: 'John', email: 'john@test.com' };
+  it('extract() delegates to extract module with the language model and returns the outcome', async () => {
     vi.mocked(extractMod.extract).mockResolvedValue({
-      data: expected,
+      status: 'completed',
+      data: { name: 'John', email: 'john@test.com' },
       usage: { inputTokens: 100, outputTokens: 50, totalTokens: 150 },
-    });
+    } as any);
     const client = createClient();
 
-    const result = await client.extract('some text', { schema: ContactSchema });
+    const outcome = await client.extract('some text', { schema: ContactSchema });
 
-    expect(result.data).toEqual(expected);
-    expect(result.usage).toEqual({ inputTokens: 100, outputTokens: 50, totalTokens: 150 });
-    expect(extractMod.extract).toHaveBeenCalledOnce();
-    expect(extractMod.extract).toHaveBeenCalledWith(
-      mockLanguageModel,
-      'some text',
-      expect.anything(),
-    );
+    expect(outcome.status).toBe('completed');
+    if (outcome.status !== 'completed') throw new Error('unreachable');
+    expect(outcome.data).toEqual({ name: 'John', email: 'john@test.com' });
+    expect(extractMod.extract).toHaveBeenCalledWith(mockLanguageModel, 'some text', expect.anything());
   });
 
-  it('transcribe() forwards options to transcribe module', async () => {
-    vi.mocked(transcribeMod.transcribe).mockResolvedValue({
-      text: 'hej',
-      segments: [],
-      durationInSeconds: undefined,
-      language: undefined,
-    });
-    const client = createClient();
-
-    await client.transcribe(Buffer.from('audio'), {
-      providerOptions: { openai: { language: 'sl' } },
-    });
-
-    expect(transcribeMod.transcribe).toHaveBeenCalledWith(
-      mockTranscriptionModel,
-      expect.anything(),
-      { providerOptions: { openai: { language: 'sl' } } },
-    );
-  });
-
-  it('fill() combines transcribe and extract, returns full result', async () => {
+  it('fill() combines transcribe and a completed extraction', async () => {
     const transcribeResult = {
       text: 'My name is John, email john@test.com',
       segments: [{ text: 'My name is John, email john@test.com', startSecond: 0, endSecond: 3.5 }],
@@ -110,22 +87,47 @@ describe('createVoiceFill', () => {
     };
     vi.mocked(transcribeMod.transcribe).mockResolvedValue(transcribeResult);
     vi.mocked(extractMod.extract).mockResolvedValue({
+      status: 'completed',
       data: { name: 'John', email: 'john@test.com' },
       usage: { inputTokens: 100, outputTokens: 50, totalTokens: 150 },
-    });
+    } as any);
 
     const client = createClient();
-    const result = await client.fill(Buffer.from('audio'), { schema: ContactSchema });
+    const outcome = await client.fill(Buffer.from('audio'), { schema: ContactSchema });
 
-    expect(result.transcript).toBe('My name is John, email john@test.com');
-    expect(result.transcription).toEqual(transcribeResult);
-    expect(result.data).toEqual({ name: 'John', email: 'john@test.com' });
-    expect(result.usage).toEqual({
-      extraction: { inputTokens: 100, outputTokens: 50, totalTokens: 150 },
-    });
+    expect(outcome.status).toBe('completed');
+    if (outcome.status !== 'completed') throw new Error('unreachable');
+    expect(outcome.transcript).toBe('My name is John, email john@test.com');
+    expect(outcome.transcription).toEqual(transcribeResult);
+    expect(outcome.data).toEqual({ name: 'John', email: 'john@test.com' });
+    expect(outcome.usage).toEqual({ inputTokens: 100, outputTokens: 50, totalTokens: 150 });
   });
 
-  it('fill() passes transcribe options to transcribe module', async () => {
+  it('fill() surfaces a needs_client_tools outcome with the transcript', async () => {
+    vi.mocked(transcribeMod.transcribe).mockResolvedValue({
+      text: 'Schedule with Jane',
+      segments: [],
+      durationInSeconds: undefined,
+      language: undefined,
+    });
+    vi.mocked(extractMod.extract).mockResolvedValue({
+      status: 'needs_client_tools',
+      calls: [{ id: 'c1', name: 'lookupLocalDraft', args: { contactName: 'Jane' } }],
+      continuation: { messages: [], usageSoFar: {}, pending: [] },
+    } as any);
+
+    const client = createClient();
+    const outcome = await client.fill(Buffer.from('audio'), { schema: ContactSchema });
+
+    expect(outcome.status).toBe('needs_client_tools');
+    if (outcome.status !== 'needs_client_tools') throw new Error('unreachable');
+    expect(outcome.transcript).toBe('Schedule with Jane');
+    expect(outcome.calls).toHaveLength(1);
+    const passedText = vi.mocked(extractMod.extract).mock.calls[0][1];
+    expect(passedText).toBe('Schedule with Jane');
+  });
+
+  it('fill() passes transcribe options to the transcribe module', async () => {
     vi.mocked(transcribeMod.transcribe).mockResolvedValue({
       text: 'hej',
       segments: [],
@@ -133,16 +135,15 @@ describe('createVoiceFill', () => {
       language: undefined,
     });
     vi.mocked(extractMod.extract).mockResolvedValue({
+      status: 'completed',
       data: { name: '', email: '' },
       usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 },
-    });
+    } as any);
 
     const client = createClient();
     await client.fill(Buffer.from('audio'), {
       schema: ContactSchema,
-      transcribe: {
-        providerOptions: { deepgram: { language: 'sl', smartFormat: true } },
-      },
+      transcribe: { providerOptions: { deepgram: { language: 'sl', smartFormat: true } } },
     });
 
     expect(transcribeMod.transcribe).toHaveBeenCalledWith(
@@ -152,27 +153,25 @@ describe('createVoiceFill', () => {
     );
   });
 
-  it('fill() exposes transcription segments, duration, and language', async () => {
-    const segments = [
-      { text: 'Hello.', startSecond: 0, endSecond: 1.0 },
-      { text: 'I am Jane.', startSecond: 1.1, endSecond: 2.5 },
-    ];
-    vi.mocked(transcribeMod.transcribe).mockResolvedValue({
-      text: 'Hello. I am Jane.',
-      segments,
-      durationInSeconds: 2.5,
-      language: 'sl',
-    });
-    vi.mocked(extractMod.extract).mockResolvedValue({
-      data: { name: 'Jane', email: '' },
-      usage: { inputTokens: 50, outputTokens: 20, totalTokens: 70 },
-    });
+  it('resume() injects the client model and forwards to resume', async () => {
+    vi.mocked(extractMod.resume).mockResolvedValue({
+      status: 'completed',
+      data: { ok: true },
+      usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 },
+    } as any);
 
     const client = createClient();
-    const result = await client.fill(Buffer.from('audio'), { schema: ContactSchema });
+    const continuation = { messages: [], usageSoFar: {}, pending: [] } as any;
+    const reg = { select: () => [], list: () => [], get: () => undefined } as any;
+    await client.resume({
+      schema: ContactSchema,
+      registry: reg,
+      continuation,
+      results: [{ id: 'c1', name: 't', result: 1 }],
+    });
 
-    expect(result.transcription.segments).toEqual(segments);
-    expect(result.transcription.durationInSeconds).toBe(2.5);
-    expect(result.transcription.language).toBe('sl');
+    expect(extractMod.resume).toHaveBeenCalledWith(
+      expect.objectContaining({ model: mockLanguageModel, continuation, registry: reg }),
+    );
   });
 });

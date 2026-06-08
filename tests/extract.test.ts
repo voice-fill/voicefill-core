@@ -10,6 +10,7 @@ vi.mock('ai', () => ({
 
 import { generateObject, generateText } from 'ai';
 import { extract } from '../src/extract.js';
+import { createToolRegistry } from '../src/registry.js';
 import { ExtractionError } from '../src/errors.js';
 
 const ContactSchema = z.object({
@@ -18,24 +19,26 @@ const ContactSchema = z.object({
   email: z.string(),
 });
 
-describe('extract', () => {
+describe('extract — pure extraction (no tools)', () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  it('calls generateObject with model, schema, and transcript as prompt', async () => {
+  it('returns a completed outcome from generateObject, without calling generateText', async () => {
     const expected = { firstName: 'John', lastName: 'Doe', email: 'john@example.com' };
     vi.mocked(generateObject).mockResolvedValue({
       object: expected,
       usage: { inputTokens: 100, outputTokens: 50, totalTokens: 150 },
     } as any);
 
-    const mockModel = {} as any;
-    const result = await extract(mockModel, 'My name is John Doe, email john@example.com', {
+    const outcome = await extract({} as any, 'My name is John Doe, email john@example.com', {
       schema: ContactSchema,
     });
 
-    expect(result.data).toEqual(expected);
+    expect(outcome.status).toBe('completed');
+    if (outcome.status !== 'completed') throw new Error('unreachable');
+    expect(outcome.data).toEqual(expected);
+    expect(outcome.usage).toEqual({ inputTokens: 100, outputTokens: 50, totalTokens: 150 });
     expect(generateObject).toHaveBeenCalledOnce();
     expect(generateText).not.toHaveBeenCalled();
   });
@@ -43,7 +46,7 @@ describe('extract', () => {
   it('uses custom system prompt when provided', async () => {
     vi.mocked(generateObject).mockResolvedValue({
       object: { firstName: 'Jane', lastName: 'Smith', email: '' },
-      usage: { inputTokens: 100, outputTokens: 50, totalTokens: 150 },
+      usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 },
     } as any);
 
     await extract({} as any, 'I am Jane Smith', {
@@ -52,9 +55,7 @@ describe('extract', () => {
     });
 
     expect(generateObject).toHaveBeenCalledWith(
-      expect.objectContaining({
-        system: 'Extract only name fields.',
-      }),
+      expect.objectContaining({ system: 'Extract only name fields.' }),
     );
   });
 
@@ -68,53 +69,74 @@ describe('extract', () => {
     expect(error.cause).toBeInstanceOf(Error);
   });
 
-  it('returns token usage from generateObject', async () => {
+  it('folds provided context into the generateObject prompt', async () => {
     vi.mocked(generateObject).mockResolvedValue({
-      object: { firstName: 'Jane', lastName: 'Doe', email: 'jane@test.com' },
-      usage: { inputTokens: 80, outputTokens: 30, totalTokens: 110 },
+      object: { firstName: 'John', lastName: 'Doe', email: 'john@saved.com' },
+      usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 },
     } as any);
 
-    const result = await extract({} as any, 'I am Jane Doe', { schema: ContactSchema });
+    await extract({} as any, 'My name is John', {
+      schema: ContactSchema,
+      context: { savedEmail: 'john@saved.com' },
+    });
 
-    expect(result.usage).toEqual({ inputTokens: 80, outputTokens: 30, totalTokens: 110 });
+    const call = vi.mocked(generateObject).mock.calls[0][0] as any;
+    expect(call.prompt).toContain('My name is John');
+    expect(call.prompt).toContain('john@saved.com');
   });
 
-  it('passes maxRetries through to generateObject', async () => {
+  it('accepts a plain string as context', async () => {
     vi.mocked(generateObject).mockResolvedValue({
       object: { firstName: '', lastName: '', email: '' },
       usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 },
     } as any);
 
-    await extract({} as any, 'text', { schema: ContactSchema, maxRetries: 0 });
+    await extract({} as any, 'transcript', { schema: ContactSchema, context: 'User works at ACME Corp.' });
 
-    expect(generateObject).toHaveBeenCalledWith(
-      expect.objectContaining({ maxRetries: 0 }),
-    );
+    const call = vi.mocked(generateObject).mock.calls[0][0] as any;
+    expect(call.prompt).toContain('User works at ACME Corp.');
   });
 
-  it('passes abortSignal through to generateObject', async () => {
+  it('passes maxRetries and abortSignal through to generateObject', async () => {
     vi.mocked(generateObject).mockResolvedValue({
       object: { firstName: '', lastName: '', email: '' },
       usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 },
     } as any);
 
     const controller = new AbortController();
-    await extract({} as any, 'text', { schema: ContactSchema, abortSignal: controller.signal });
+    await extract({} as any, 'text', {
+      schema: ContactSchema,
+      maxRetries: 0,
+      abortSignal: controller.signal,
+    });
 
     expect(generateObject).toHaveBeenCalledWith(
-      expect.objectContaining({ abortSignal: controller.signal }),
+      expect.objectContaining({ maxRetries: 0, abortSignal: controller.signal }),
     );
   });
 });
 
-describe('extract with tools', () => {
+describe('extract — server tools', () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  it('runs generateText with tools first, then generateObject for structured output', async () => {
+  const registry = createToolRegistry([
+    {
+      name: 'searchContacts',
+      description: 'Search contacts by name',
+      parameters: z.object({ query: z.string() }),
+      runsOn: 'server',
+      execute: async () => [{ name: 'John Doe', email: 'john@acme.com' }],
+    },
+  ]);
+
+  it('gathers with generateText then produces structured output with generateObject', async () => {
     vi.mocked(generateText).mockResolvedValue({
-      text: 'The contact is John Doe, email john@acme.com. Found via search.',
+      finishReason: 'stop',
+      text: 'The contact is John Doe, email john@acme.com.',
+      toolCalls: [],
+      response: { messages: [] },
       totalUsage: { inputTokens: 200, outputTokens: 80, totalTokens: 280 },
     } as any);
     vi.mocked(generateObject).mockResolvedValue({
@@ -122,195 +144,26 @@ describe('extract with tools', () => {
       usage: { inputTokens: 100, outputTokens: 50, totalTokens: 150 },
     } as any);
 
-    const searchTool = {
-      name: 'searchContacts',
-      description: 'Search contacts by name',
-      parameters: z.object({ query: z.string() }),
-      execute: vi.fn().mockResolvedValue([{ name: 'John Doe', email: 'john@acme.com' }]),
-    };
-
-    const result = await extract({} as any, 'Find John from Acme', {
+    const outcome = await extract({} as any, 'Find John from Acme', {
       schema: ContactSchema,
-      tools: [searchTool],
+      registry,
+      request: ['searchContacts'],
     });
 
     expect(generateText).toHaveBeenCalledOnce();
     expect(generateObject).toHaveBeenCalledOnce();
-    expect(result.data).toEqual({ firstName: 'John', lastName: 'Doe', email: 'john@acme.com' });
+    expect(outcome.status).toBe('completed');
+    if (outcome.status !== 'completed') throw new Error('unreachable');
+    expect(outcome.data).toEqual({ firstName: 'John', lastName: 'Doe', email: 'john@acme.com' });
+    expect(outcome.usage).toEqual({ inputTokens: 300, outputTokens: 130, totalTokens: 430 });
   });
 
-  it('passes tools as object keyed by name to generateText', async () => {
+  it('passes the selected server tool (with execute) to generateText', async () => {
     vi.mocked(generateText).mockResolvedValue({
-      text: 'info gathered',
-      totalUsage: { inputTokens: 200, outputTokens: 80, totalTokens: 280 },
-    } as any);
-    vi.mocked(generateObject).mockResolvedValue({
-      object: { firstName: '', lastName: '', email: '' },
-      usage: { inputTokens: 100, outputTokens: 50, totalTokens: 150 },
-    } as any);
-
-    const tool1 = {
-      name: 'lookup',
-      description: 'Look up data',
-      parameters: z.object({ id: z.string() }),
-      execute: vi.fn(),
-    };
-
-    await extract({} as any, 'some text', {
-      schema: ContactSchema,
-      tools: [tool1],
-    });
-
-    expect(generateText).toHaveBeenCalledWith(
-      expect.objectContaining({
-        tools: expect.objectContaining({
-          lookup: expect.objectContaining({
-            description: 'Look up data',
-          }),
-        }),
-      }),
-    );
-  });
-
-  it('feeds generateText output into generateObject as context', async () => {
-    vi.mocked(generateText).mockResolvedValue({
-      text: 'Gathered info: Jane Smith, jane@test.com',
-      totalUsage: { inputTokens: 200, outputTokens: 80, totalTokens: 280 },
-    } as any);
-    vi.mocked(generateObject).mockResolvedValue({
-      object: { firstName: 'Jane', lastName: 'Smith', email: 'jane@test.com' },
-      usage: { inputTokens: 100, outputTokens: 50, totalTokens: 150 },
-    } as any);
-
-    await extract({} as any, 'Find Jane', {
-      schema: ContactSchema,
-      tools: [
-        {
-          name: 'search',
-          description: 'Search',
-          parameters: z.object({ q: z.string() }),
-          execute: vi.fn(),
-        },
-      ],
-    });
-
-    const generateObjectCall = vi.mocked(generateObject).mock.calls[0][0] as any;
-    expect(generateObjectCall.prompt).toContain('Find Jane');
-    expect(generateObjectCall.prompt).toContain('Gathered info: Jane Smith, jane@test.com');
-  });
-
-  it('uses default maxSteps of 5', async () => {
-    vi.mocked(generateText).mockResolvedValue({
+      finishReason: 'stop',
       text: 'done',
-      totalUsage: { inputTokens: 200, outputTokens: 80, totalTokens: 280 },
-    } as any);
-    vi.mocked(generateObject).mockResolvedValue({
-      object: { firstName: '', lastName: '', email: '' },
-      usage: { inputTokens: 100, outputTokens: 50, totalTokens: 150 },
-    } as any);
-
-    await extract({} as any, 'text', {
-      schema: ContactSchema,
-      tools: [
-        {
-          name: 't',
-          description: 'd',
-          parameters: z.object({}),
-          execute: vi.fn(),
-        },
-      ],
-    });
-
-    expect(generateText).toHaveBeenCalledWith(
-      expect.objectContaining({
-        stopWhen: 'stepCountIs(5)',
-      }),
-    );
-  });
-
-  it('respects custom maxSteps', async () => {
-    vi.mocked(generateText).mockResolvedValue({
-      text: 'done',
-      totalUsage: { inputTokens: 200, outputTokens: 80, totalTokens: 280 },
-    } as any);
-    vi.mocked(generateObject).mockResolvedValue({
-      object: { firstName: '', lastName: '', email: '' },
-      usage: { inputTokens: 100, outputTokens: 50, totalTokens: 150 },
-    } as any);
-
-    await extract({} as any, 'text', {
-      schema: ContactSchema,
-      maxSteps: 10,
-      tools: [
-        {
-          name: 't',
-          description: 'd',
-          parameters: z.object({}),
-          execute: vi.fn(),
-        },
-      ],
-    });
-
-    expect(generateText).toHaveBeenCalledWith(
-      expect.objectContaining({
-        stopWhen: 'stepCountIs(10)',
-      }),
-    );
-  });
-
-  it('combines token usage from generateText and generateObject when tools are used', async () => {
-    vi.mocked(generateText).mockResolvedValue({
-      text: 'gathered data',
-      totalUsage: { inputTokens: 200, outputTokens: 80, totalTokens: 280 },
-    } as any);
-    vi.mocked(generateObject).mockResolvedValue({
-      object: { firstName: 'A', lastName: 'B', email: 'a@b.com' },
-      usage: { inputTokens: 100, outputTokens: 50, totalTokens: 150 },
-    } as any);
-
-    const result = await extract({} as any, 'text', {
-      schema: ContactSchema,
-      tools: [{
-        name: 't', description: 'd',
-        parameters: z.object({}), execute: vi.fn(),
-      }],
-    });
-
-    expect(result.usage).toEqual({
-      inputTokens: 300,
-      outputTokens: 130,
-      totalTokens: 430,
-    });
-  });
-
-  it('handles undefined token counts when combining usage', async () => {
-    vi.mocked(generateText).mockResolvedValue({
-      text: 'gathered',
-      totalUsage: { inputTokens: undefined, outputTokens: 80, totalTokens: undefined },
-    } as any);
-    vi.mocked(generateObject).mockResolvedValue({
-      object: { firstName: 'A', lastName: 'B', email: 'c@d.com' },
-      usage: { inputTokens: 100, outputTokens: undefined, totalTokens: undefined },
-    } as any);
-
-    const result = await extract({} as any, 'text', {
-      schema: ContactSchema,
-      tools: [{
-        name: 't', description: 'd',
-        parameters: z.object({}), execute: vi.fn(),
-      }],
-    });
-
-    expect(result.usage).toEqual({
-      inputTokens: undefined,
-      outputTokens: undefined,
-      totalTokens: undefined,
-    });
-  });
-
-  it('passes maxRetries and abortSignal to generateText when tools are used', async () => {
-    vi.mocked(generateText).mockResolvedValue({
-      text: 'done',
+      toolCalls: [],
+      response: { messages: [] },
       totalUsage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 },
     } as any);
     vi.mocked(generateObject).mockResolvedValue({
@@ -318,22 +171,115 @@ describe('extract with tools', () => {
       usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 },
     } as any);
 
-    const controller = new AbortController();
-    await extract({} as any, 'text', {
+    await extract({} as any, 'text', { schema: ContactSchema, registry, request: ['searchContacts'] });
+
+    const call = vi.mocked(generateText).mock.calls[0][0] as any;
+    expect(call.tools.searchContacts).toBeDefined();
+    expect(call.tools.searchContacts.execute).toBeTypeOf('function');
+    expect(call.stopWhen).toBe('stepCountIs(5)');
+  });
+
+  it('folds context into the gather messages when tools are used', async () => {
+    vi.mocked(generateText).mockResolvedValue({
+      finishReason: 'stop',
+      text: 'done',
+      toolCalls: [],
+      response: { messages: [] },
+      totalUsage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 },
+    } as any);
+    vi.mocked(generateObject).mockResolvedValue({
+      object: { firstName: '', lastName: '', email: '' },
+      usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 },
+    } as any);
+
+    await extract({} as any, 'Find John', {
       schema: ContactSchema,
-      maxRetries: 3,
-      abortSignal: controller.signal,
-      tools: [{
-        name: 't', description: 'd',
-        parameters: z.object({}), execute: vi.fn(),
-      }],
+      registry,
+      request: ['searchContacts'],
+      context: { company: 'ACME Corp' },
     });
 
-    expect(generateText).toHaveBeenCalledWith(
-      expect.objectContaining({ maxRetries: 3, abortSignal: controller.signal }),
-    );
-    expect(generateObject).toHaveBeenCalledWith(
-      expect.objectContaining({ maxRetries: 3, abortSignal: controller.signal }),
-    );
+    const call = vi.mocked(generateText).mock.calls[0][0] as any;
+    const userMsg = call.messages.find((m: any) => m.role === 'user');
+    expect(JSON.stringify(userMsg.content)).toContain('ACME Corp');
+  });
+
+  it('passes the full conversation — including the transcript — to the structuring call', async () => {
+    vi.mocked(generateText).mockResolvedValue({
+      finishReason: 'stop',
+      text: 'summary',
+      toolCalls: [],
+      response: { messages: [{ role: 'assistant', content: 'The contact works at Acme.' }] },
+      totalUsage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 },
+    } as any);
+    vi.mocked(generateObject).mockResolvedValue({
+      object: { firstName: 'John', lastName: 'Doe', email: 'john@acme.com' },
+      usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 },
+    } as any);
+
+    await extract({} as any, 'My name is John Doe, email john@acme.com', {
+      schema: ContactSchema,
+      registry,
+      request: ['searchContacts'],
+    });
+
+    const objCall = vi.mocked(generateObject).mock.calls[0][0] as any;
+    const serialized = JSON.stringify(objCall.messages);
+    expect(serialized).toContain('My name is John Doe, email john@acme.com');
+    expect(serialized).toContain('The contact works at Acme.');
+  });
+
+  it('hands verbatim tool outputs to the structuring call, not just the model summary', async () => {
+    vi.mocked(generateText).mockResolvedValue({
+      finishReason: 'stop',
+      text: 'Found the contact.', // summary deliberately omits the phone number
+      toolCalls: [],
+      response: {
+        messages: [
+          {
+            role: 'assistant',
+            content: [{ type: 'tool-call', toolCallId: 't1', toolName: 'searchContacts', input: { query: 'John' } }],
+          },
+          {
+            role: 'tool',
+            content: [
+              {
+                type: 'tool-result',
+                toolCallId: 't1',
+                toolName: 'searchContacts',
+                output: { type: 'json', value: { phone: '555-0188' } },
+              },
+            ],
+          },
+          { role: 'assistant', content: 'Found the contact.' },
+        ],
+      },
+      totalUsage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 },
+    } as any);
+    vi.mocked(generateObject).mockResolvedValue({
+      object: { firstName: 'John', lastName: 'Doe', email: 'john@acme.com' },
+      usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 },
+    } as any);
+
+    await extract({} as any, 'Find John from Acme', {
+      schema: ContactSchema,
+      registry,
+      request: ['searchContacts'],
+    });
+
+    const objCall = vi.mocked(generateObject).mock.calls[0][0] as any;
+    expect(JSON.stringify(objCall.messages)).toContain('555-0188');
+  });
+
+  it('falls back to pure extraction when the client requests no valid tools', async () => {
+    vi.mocked(generateObject).mockResolvedValue({
+      object: { firstName: '', lastName: '', email: '' },
+      usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 },
+    } as any);
+
+    await extract({} as any, 'text', { schema: ContactSchema, registry, request: ['nope'] });
+
+    expect(generateText).not.toHaveBeenCalled();
+    expect(generateObject).toHaveBeenCalledOnce();
   });
 });
