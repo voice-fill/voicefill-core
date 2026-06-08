@@ -1,8 +1,16 @@
 # @voicefill/core
 
+[![CI](https://github.com/amadejzr/voicefill-core/actions/workflows/ci.yml/badge.svg)](https://github.com/amadejzr/voicefill-core/actions/workflows/ci.yml)
+[![Node](https://img.shields.io/badge/node-%3E%3D18-brightgreen)](https://nodejs.org)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
+
 Turn audio into structured data. Combines speech-to-text transcription and AI-powered structured output extraction into a single pipeline — with an optional, server-authoritative tool registry for data enrichment.
 
 Works with any transcription and language model supported by the [Vercel AI SDK](https://ai-sdk.dev): OpenAI Whisper, Deepgram Nova-3, AssemblyAI, Azure Speech, and more.
+
+> **Server-side / Node 18+ only.** This is a backend library — it reads files and uses Node's
+> `Buffer`, so it is not built for browser or edge runtimes. Keep your provider API keys on the
+> server. Runnable examples live in [`examples/`](./examples).
 
 ## Install
 
