@@ -7,7 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-The first `0.1.0` release is not yet published to npm. Everything below ships in it.
+## [0.1.0] - 2026-06-30
+
+Initial release.
 
 ### Added
 
@@ -27,4 +29,5 @@ The first `0.1.0` release is not yet published to npm. Everything below ships in
 - Error hierarchy: `VoiceFillError`, `TranscriptionError`, `ExtractionError`,
   `AudioFormatError`, with `cause` chaining.
 
-[Unreleased]: https://github.com/amadejzr/voicefill-core/commits/main
+[Unreleased]: https://github.com/amadejzr/voicefill-core/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/amadejzr/voicefill-core/releases/tag/v0.1.0
